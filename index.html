@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Firestore 메모장</title>
+    <title>Firestore 비공개 메모장</title>
     <!-- Tailwind CSS 로딩 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -37,7 +37,6 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 10px rgba(0, 0, 0, 0.1);
         }
-        /* 메모 내용 줄 제한 없음 */
         .note-content {
             white-space: pre-wrap; 
             word-break: break-word; 
@@ -71,12 +70,25 @@
             from { opacity: 0; transform: scale(0.9); }
             to { opacity: 1; transform: scale(1); }
         }
+        /* 로딩 스피너 CSS */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 1.25rem;
+            height: 1.25rem;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
 
     <div class="max-w-4xl mx-auto">
-        <h1 class="text-4xl font-bold text-gray-800 mb-8 text-center">🔒 Firestore 메모장</h1>
+        <h1 class="text-4xl font-bold text-gray-800 mb-8 text-center">🔒 Firestore 비공개 메모장</h1>
 
         <!-- 메모 작성 영역 -->
         <div class="flex flex-col md:flex-row gap-4 mb-10 p-6 bg-white rounded-xl shadow-lg border border-gray-100">
@@ -88,16 +100,21 @@
             <div class="flex md:flex-col items-stretch">
                 <button onclick="saveNote()" id="save-note-btn"
                         class="w-full md:w-auto px-6 py-3 text-white font-semibold bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-md transition duration-150 ease-in-out flex items-center justify-center whitespace-nowrap disabled:opacity-50" disabled>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
-                    </svg>
-                    입력
+                    <span id="button-content">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                        </svg>
+                        입력
+                    </span>
+                    <span id="button-loading" class="hidden">
+                        <div class="spinner"></div>
+                    </span>
                 </button>
             </div>
         </div>
         
         <!-- 인증 상태 및 사용자 ID 표시 (비공개 경로임을 강조) -->
-        <p id="auth-status" class="text-center text-sm text-yellow-600 mb-4 font-semibold">인증 및 데이터베이스 연결 중... (현재 개인 메모 모드)</p>
+        <p id="auth-status" class="text-center text-sm text-gray-500 mb-4 font-semibold">인증 및 데이터베이스 연결 중...</p>
         
         <!-- 메모 리스트 제목 -->
         <h2 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">나만의 메모 목록</h2>
@@ -132,7 +149,6 @@
     <script type="module">
         // --- Firebase UMD Imports ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // signInWithCustomToken은 일반 웹 배포 시 제거합니다.
         import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -171,21 +187,35 @@
         const saveEditBtn = document.getElementById('save-edit-btn');
         const saveNoteBtn = document.getElementById('save-note-btn');
         const authStatus = document.getElementById('auth-status');
+        const buttonContent = document.getElementById('button-content');
+        const buttonLoading = document.getElementById('button-loading');
 
-        // --- 2. Firestore 컬렉션 참조 함수 (***일반 웹 배포 경로 사용***) ---
+        // --- 2. Firestore 컬렉션 참조 함수 ---
         function getNotesCollectionRef() {
             if (!userId) {
                 throw new Error("User ID is required for private collection reference.");
             }
-            // 일반 웹 배포 시 경로: /users/{userId}/notes
             return collection(db, `users/${userId}/notes`); 
         }
 
+        // --- 버튼 상태 관리 함수 ---
+        function setButtonState(isLoading) {
+            saveNoteBtn.disabled = isLoading;
+            if (isLoading) {
+                buttonContent.classList.add('hidden');
+                buttonLoading.classList.remove('hidden');
+            } else {
+                buttonContent.classList.remove('hidden');
+                buttonLoading.classList.add('hidden');
+            }
+        }
 
         // --- 3. Firebase 초기화 및 인증 ---
         async function initFirebase() {
+            setButtonState(true); // 초기화 시작 시 버튼 비활성화 및 로딩 표시
+            authStatus.textContent = "인증 및 데이터베이스 연결 중...";
+            
             try {
-                // 🚩 제공된 FIREBASE_CONFIG를 사용하여 초기화
                 if (!FIREBASE_CONFIG.apiKey) {
                      authStatus.textContent = "오류: Firebase 설정이 누락되었습니다.";
                      return;
@@ -195,28 +225,41 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // 세션 유지를 위해 persistence 설정
                 await setPersistence(auth, browserSessionPersistence);
 
-
-                // 3-1. 인증 상태 확인 및 처리
                 onAuthStateChanged(auth, async (user) => {
                     if (user) {
+                        // 🟢 인증 성공
                         userId = user.uid;
                         isAuthReady = true;
-                        // 사용자 ID를 표시 (비공개 경로임을 명시)
-                        authStatus.textContent = `✅ 연결됨 - 비공개 모드 (User ID: ${userId})`;
-                        saveNoteBtn.disabled = false;
-                        loadNotesRealtime(); // 인증 후 실시간 로드 시작
+                        authStatus.textContent = `✅ 연결 완료 - 개인 메모 모드 (User ID: ${userId.substring(0, 8)}...)`;
+                        authStatus.classList.remove('text-gray-500');
+                        authStatus.classList.add('text-indigo-600', 'font-bold');
+                        setButtonState(false); // 인증 성공 시 버튼 활성화
+                        loadNotesRealtime(); // 실시간 로드 시작
                     } else {
-                        // 익명 로그인 시도 (GitHub Pages 배포 환경의 기본 인증 방식)
-                        await signInAnonymously(auth);
+                        // 🟡 익명 로그인 시도
+                        try {
+                            await signInAnonymously(auth);
+                        } catch(anonError) {
+                            // 🔴 익명 로그인 실패
+                            console.error("익명 로그인 실패:", anonError);
+                            authStatus.textContent = "❌ 인증 실패 - 새로고침하거나 콘솔을 확인하세요.";
+                            authStatus.classList.remove('text-gray-500');
+                            authStatus.classList.add('text-red-600', 'font-bold');
+                            setButtonState(true); // 버튼 비활성화 유지
+                            isAuthReady = false;
+                        }
                     }
                 });
 
             } catch (error) {
+                // 🔴 초기화 실패
                 console.error("Firebase 초기화/인증 오류:", error);
-                authStatus.textContent = "오류: Firebase 연결에 실패했습니다. 콘솔을 확인하세요.";
+                authStatus.textContent = "❌ 치명적 오류: Firebase 연결에 실패했습니다. 콘솔을 확인하세요.";
+                authStatus.classList.remove('text-gray-500');
+                authStatus.classList.add('text-red-600', 'font-bold');
+                setButtonState(true); // 버튼 비활성화 유지
                 showToast("Firebase 연결 실패. 콘솔을 확인하세요.", 'bg-red-700');
             }
         }
@@ -224,7 +267,7 @@
         // --- 4. 메모 저장 (Create) ---
         window.saveNote = async function() {
             if (!isAuthReady || !userId) {
-                showToast("사용자 인증 대기 중이거나 로그인되지 않았습니다.", 'bg-yellow-500');
+                showToast("사용자 인증 대기 중이거나 로그인되지 않았습니다. 잠시 후 다시 시도해주세요.", 'bg-yellow-600');
                 return;
             }
 
@@ -233,6 +276,8 @@
                 showToast("메모 내용을 입력해주세요.", 'bg-red-500');
                 return;
             }
+            
+            setButtonState(true); // 저장 중 버튼 비활성화
             
             try {
                 const newNote = { 
@@ -248,7 +293,9 @@
                 currentPage = 1;
             } catch (error) {
                 console.error("메모 저장 오류:", error);
-                showToast("메모 저장에 실패했습니다. (보안 규칙 또는 네트워크 오류)", 'bg-red-500');
+                showToast("메모 저장에 실패했습니다. (보안 규칙 문제일 수 있음)", 'bg-red-500');
+            } finally {
+                setButtonState(false); // 작업 완료 후 버튼 활성화
             }
         }
 
