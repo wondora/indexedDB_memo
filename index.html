@@ -9,15 +9,20 @@
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;700&display=swap');
+
         body {
             font-family: 'Pretendard', sans-serif;
             background-color: #f3f4f6;
             min-height: 100vh;
         }
 
-        /* 메모 리스트: 한 줄에 하나씩 */
-        #noteList li {
+        /* 리스트: 한 줄에 하나 */
+        #noteList {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
             list-style: none;
+            padding: 0;
         }
 
         .note-card {
@@ -25,287 +30,416 @@
             background-color: white;
             padding: 16px;
             border-radius: 12px;
-            margin-bottom: 16px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
 
-        .note-content {
-            white-space: pre-wrap;
-            word-break: break-word;
-            margin-top: 8px;
-            line-height: 1.5;
-            color: #4b5563;
+        .note-content img {
+            max-height: 300px;        /* 요청한 제한 */
+            max-width: 100%;
+            border-radius: 10px;
+            margin: 8px 0;
+        }
+
+        /* 모달 */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+        }
+
+        /* 애니메이션 */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 1rem;
+            height: 1rem;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
-
 <body class="p-4 md:p-8">
 
 <div class="max-w-4xl mx-auto">
 
-    <h1 class="text-4xl font-bold text-gray-800 mb-8 text-center">
-        🔐 Firestore 메모장 
-    </h1>
+    <!-- 제목 -->
+    <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">📝 Firestore 메모장</h1>
 
     <!-- 로그인 상태 박스 -->
-    <div id="auth-box" class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 p-4 bg-white rounded-xl shadow-md">
-        <div>
-            <p id="auth-status" class="font-semibold text-indigo-700">Google 로그인 필요합니다.</p>
-            <p id="user-display" class="text-sm text-gray-600 mt-1 hidden"></p>
-        </div>
+    <div id="auth-box" class="p-4 bg-white rounded-xl shadow mb-6 flex justify-between items-center">
+        <p id="auth-status" class="font-semibold text-indigo-700">Google 로그인 필요합니다.</p>
+        <p id="user-display" class="text-sm text-gray-600"></p>
     </div>
 
-    <!-- 메모 입력 박스 -->
-    <div class="flex flex-col gap-4 mb-10 p-6 bg-white rounded-xl shadow-lg">
+    <!-- 메모 작성 박스 -->
+    <div class="p-6 bg-white rounded-xl shadow-lg mb-10">
 
-        <!-- 로그인 버튼 -->
-        <div class="flex justify-end">
-            <button onclick="signInWithGoogle()" id="google-sign-in-btn"
-                class="px-4 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg">
-                <img src="https://upload.wikimedia.org/wikipedia/commons/4/4a/Logo-google-G-icon.png"
-                     class="inline w-4 h-4 mr-2"> Google 로그인
+        <!-- 로그인 / 로그아웃 버튼 (오른쪽 정렬) -->
+        <div class="flex justify-end mb-3">
+            <button id="google-login-btn"
+                    onclick="signInWithGoogle()"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md hover:bg-blue-700">
+                Google 로그인
             </button>
 
-            <button onclick="signOutUser()" id="sign-out-btn"
-                class="ml-3 px-4 py-2 text-sm font-semibold bg-gray-500 text-white rounded-lg hidden">
+            <button id="logout-btn"
+                    onclick="signOutUser()"
+                    class="ml-3 px-4 py-2 bg-gray-500 text-white rounded-lg shadow-md hover:bg-gray-600 hidden">
                 로그아웃
             </button>
         </div>
 
-        <!-- 입력 -->
-        <div class="flex flex-col md:flex-row gap-4">
+        <!-- 입력 영역 -->
+        <textarea id="note-input" rows="5"
+                  placeholder="메모를 입력하세요..."
+                  class="w-full p-4 border rounded-lg resize-none"
+                  disabled></textarea>
 
-            <textarea id="note-input" rows="5" placeholder="로그인 후 메모를 입력하세요..."
-                      class="flex-grow p-4 border rounded-lg resize-none" disabled>
-            </textarea>
-
-            <button onclick="saveNote()" id="save-note-btn"
-                class="md:w-32 px-6 py-3 text-white font-semibold bg-indigo-600 rounded-lg disabled:opacity-50" disabled>
-                입력
-            </button>
-        </div>
+        <button id="save-note-btn"
+                onclick="saveNote()"
+                class="mt-4 w-full bg-indigo-600 text-white py-2 rounded-lg disabled:opacity-50"
+                disabled>
+            저장
+        </button>
     </div>
 
+    <!-- 메모 리스트 -->
     <ul id="noteList"></ul>
 
     <!-- 페이지네이션 -->
-    <div id="pagination" class="flex justify-center gap-4 mt-6 hidden">
-        <button id="prevBtn" class="px-4 py-2 bg-gray-300 rounded-lg">이전</button>
-        <span id="pageInfo" class="px-4 py-2 font-semibold"></span>
-        <button id="nextBtn" class="px-4 py-2 bg-gray-300 rounded-lg">다음</button>
-    </div>
-
+    <div id="pagination" class="flex justify-center gap-2 mt-8"></div>
 </div>
-
-<!-- Firestore -->
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
-        from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, updateDoc }
-        from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    const FIREBASE_CONFIG = {
-        apiKey: "AIzaSyBq4P9oCU6pzJFRv_xxJyvG9moYjlHTeys",
-        authDomain: "memo-f8ef8.firebaseapp.com",
-        projectId: "memo-f8ef8",
-        storageBucket: "memo-f8ef8.firebasestorage.app",
-        messagingSenderId: "92169207764",
-        appId: "1:92169207764:web:b2b078dcfe8d38dcf62041",
-    };
+/* ---------------------------
+   Firebase Import
+---------------------------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { 
+    getAuth, 
+    GoogleAuthProvider, 
+    signInWithPopup, 
+    signOut, 
+    onAuthStateChanged 
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-    const app = initializeApp(FIREBASE_CONFIG);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+import { 
+    getFirestore, 
+    collection, 
+    addDoc, 
+    getDocs, 
+    updateDoc, 
+    deleteDoc, 
+    doc 
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    let userId = null;
-    let allNotes = [];   // 전체 메모 목록 저장 (옵션 A)
-    let currentPage = 1;
-    const PAGE_SIZE = 20;
+import {
+    getStorage,
+    ref,
+    uploadBytes,
+    getDownloadURL
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
-    const noteInput = document.getElementById("note-input");
-    const saveBtn = document.getElementById("save-note-btn");
-    const noteList = document.getElementById("noteList");
-    const pagination = document.getElementById("pagination");
-    const pageInfo = document.getElementById("pageInfo");
-    const prevBtn = document.getElementById("prevBtn");
-    const nextBtn = document.getElementById("nextBtn");
 
-    /* Google 로그인 */
-    window.signInWithGoogle = async function () {
-        try {
-            const provider = new GoogleAuthProvider();
-            await signInWithPopup(auth, provider);
-        } catch (e) { alert("로그인 실패"); }
-    };
+/* ---------------------------
+   Firebase 설정
+---------------------------- */
+const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBq4P9oCU6pzJFRv_xxJyvG9moYjlHTeys",
+    authDomain: "memo-f8ef8.firebaseapp.com",
+    projectId: "memo-f8ef8",
+    storageBucket: "memo-f8ef8.firebasestorage.app",
+    messagingSenderId: "92169207764",
+    appId: "1:92169207764:web:b2b078dcfe8d38dcf62041",
+    measurementId: "G-X6GT0JDL7S"
+};
 
-    /* 로그아웃 */
-    window.signOutUser = async () => signOut(auth);
+const app = initializeApp(FIREBASE_CONFIG);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const storage = getStorage(app);
 
-    /* 인증 상태 */
-    onAuthStateChanged(auth, async (user) => {
 
-        if (!user) {
-            userId = null;
+/* ---------------------------
+   글로벌 변수
+---------------------------- */
+let userId = null;
+let allNotes = [];
+let currentPage = 1;
+const NOTES_PER_PAGE = 20;
 
-            document.getElementById("auth-box").classList.remove("hidden");
-            document.getElementById("auth-status").textContent = "Google 로그인 필요합니다.";
-            document.getElementById("user-display").classList.add("hidden");
 
-            document.getElementById("google-sign-in-btn").classList.remove("hidden");
-            document.getElementById("sign-out-btn").classList.add("hidden");
+/* ---------------------------
+   DOM 요소
+---------------------------- */
+const noteInput = document.getElementById("note-input");
+const saveNoteBtn = document.getElementById("save-note-btn");
+const authBox = document.getElementById("auth-box");
+const authStatus = document.getElementById("auth-status");
+const userDisplay = document.getElementById("user-display");
+const googleLoginBtn = document.getElementById("google-login-btn");
+const logoutBtn = document.getElementById("logout-btn");
+const noteList = document.getElementById("noteList");
+const pagination = document.getElementById("pagination");
 
-            noteInput.disabled = true;
-            saveBtn.disabled = true;
 
-            allNotes = [];
-            renderPage();
-            return;
-        }
+/* ---------------------------
+   로그인 / 로그아웃
+---------------------------- */
+window.signInWithGoogle = async function () {
+    const provider = new GoogleAuthProvider();
+    try {
+        await signInWithPopup(auth, provider);
+    } catch (err) {
+        alert("Google 로그인 실패");
+        console.error(err);
+    }
+};
 
-        /* 로그인 상태 */
+window.signOutUser = async function () {
+    try {
+        await signOut(auth);
+    } catch (err) {
+        alert("로그아웃 실패");
+        console.error(err);
+    }
+};
+
+
+/* ---------------------------
+   인증 상태 변화 감지
+---------------------------- */
+onAuthStateChanged(auth, async (user) => {
+
+    if (user) {
         userId = user.uid;
 
-        // 로그인되면 인증 박스 숨김
-        document.getElementById("auth-box").classList.add("hidden");
-
-        document.getElementById("google-sign-in-btn").classList.add("hidden");
-        document.getElementById("sign-out-btn").classList.remove("hidden");
-
-        document.getElementById("user-display").textContent = `${user.displayName} (${user.email})`;
-        document.getElementById("user-display").classList.remove("hidden");
+        authStatus.textContent = "";
+        userDisplay.textContent = `${user.email}`;
+        googleLoginBtn.classList.add("hidden");
+        logoutBtn.classList.remove("hidden");
 
         noteInput.disabled = false;
-        saveBtn.disabled = false;
+        saveNoteBtn.disabled = false;
 
-        await loadNotes();
-    });
+        loadAllNotes();
 
-    /* 메모 저장 */
-    window.saveNote = async function () {
-        const text = noteInput.value.trim();
-        if (!text) return;
+    } else {
+        userId = null;
 
-        await addDoc(collection(db, `users/${userId}/notes`), {
-            content: text,
-            date: new Date().toISOString()
-        });
+        authStatus.textContent = "Google 로그인 필요합니다.";
+        userDisplay.textContent = "";
+        googleLoginBtn.classList.remove("hidden");
+        logoutBtn.classList.add("hidden");
 
-        noteInput.value = "";
-        await loadNotes();
-    };
-
-    /* Firestore → 전체 데이터 가져오기 */
-    async function loadNotes() {
-        const ref = collection(db, `users/${userId}/notes`);
-        const qs = await getDocs(ref);
+        noteInput.disabled = true;
+        saveNoteBtn.disabled = true;
 
         allNotes = [];
-        qs.forEach(doc => {
-            allNotes.push({
-                id: doc.id,
-                ...doc.data()
-            });
-        });
+        renderNotes();
+    }
+});
 
-        // 최신 메모가 위로
-        allNotes.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        currentPage = 1;
-        renderPage();
+/* ---------------------------
+   Firestore 경로 helpers
+---------------------------- */
+function notesCollection() {
+    return collection(db, `users/${userId}/notes`);
+}
+
+
+/* ---------------------------
+   1) 메모 전체 로드 (옵션 A 페이징 방식)
+---------------------------- */
+async function loadAllNotes() {
+    if (!userId) return;
+
+    const snapshot = await getDocs(notesCollection());
+    const temp = [];
+
+    snapshot.forEach(docItem => {
+        temp.push({ id: docItem.id, ...docItem.data() });
+    });
+
+    allNotes = temp.sort((a,b)=> new Date(b.date) - new Date(a.date));
+
+    renderNotes();
+}
+
+
+/* ---------------------------
+   2) 메모 저장
+---------------------------- */
+window.saveNote = async function () {
+    if (!userId) return;
+
+    const text = noteInput.value.trim();
+    if (!text) {
+        alert("메모 내용을 입력하세요.");
+        return;
     }
 
-    /* 페이지 렌더링 */
-    function renderPage() {
-        noteList.innerHTML = "";
+    await addDoc(notesCollection(), {
+        content: text,
+        date: new Date().toISOString()
+    });
 
-        if (allNotes.length === 0) {
-            pagination.classList.add("hidden");
-            return;
+    noteInput.value = "";
+    loadAllNotes();
+};
+
+
+/* ---------------------------
+   3) 메모 삭제
+---------------------------- */
+window.deleteNote = async function (id) {
+    await deleteDoc(doc(db, `users/${userId}/notes/${id}`));
+    loadAllNotes();
+};
+
+
+/* ---------------------------
+   4) 메모 수정
+---------------------------- */
+window.updateNote = async function (id) {
+    const newText = prompt("수정할 내용을 입력하세요:");
+    if (!newText) return;
+
+    await updateDoc(doc(db, `users/${userId}/notes/${id}`), {
+        content: newText,
+        date: new Date().toISOString()
+    });
+
+    loadAllNotes();
+};
+
+
+/* ---------------------------
+   붙여넣기 이미지 업로드 기능
+---------------------------- */
+noteInput.addEventListener("paste", async (event) => {
+
+    const items = event.clipboardData.items;
+
+    for (let item of items) {
+
+        if (item.type.indexOf("image") === 0) {
+            const file = item.getAsFile();
+
+            const fileName = Date.now() + ".png";
+            const storageRef = ref(storage, `users/${userId}/images/${fileName}`);
+
+            await uploadBytes(storageRef, file);
+            const url = await getDownloadURL(storageRef);
+
+            // 메모 입력창에 img 태그 자동 삽입
+            const imgTag = `<img src="${url}" style="max-height:300px; border-radius:8px;" />`;
+            noteInput.value += "\n" + imgTag + "\n";
         }
-
-        const start = (currentPage - 1) * PAGE_SIZE;
-        const end = start + PAGE_SIZE;
-
-        const pageItems = allNotes.slice(start, end);
-
-        pageItems.forEach(note => {
-            const li = document.createElement("li");
-            li.innerHTML = `
-                <div class="note-card">
-                    <p class="note-content">${note.content}</p>
-                    <div class="flex justify-end gap-2 mt-4">
-                        <button onclick="openEditModal('${note.id}', '${encodeURIComponent(note.content)}')"
-                            class="px-3 py-1 text-sm text-indigo-600 border rounded-lg">수정</button>
-
-                        <button onclick="deleteNote('${note.id}')"
-                            class="px-3 py-1 text-sm text-red-600 border rounded-lg">삭제</button>
-                    </div>
-                </div>
-            `;
-            noteList.appendChild(li);
-        });
-
-        pagination.classList.remove("hidden");
-
-        pageInfo.textContent = `${currentPage} / ${Math.ceil(allNotes.length / PAGE_SIZE)}`;
-        prevBtn.disabled = currentPage === 1;
-        nextBtn.disabled = end >= allNotes.length;
     }
+});
 
-    /* 페이지네이션 */
-    prevBtn.onclick = () => {
-        currentPage--;
-        renderPage();
-    };
-    nextBtn.onclick = () => {
-        currentPage++;
-        renderPage();
-    };
 
-    /* 삭제 */
-    window.deleteNote = async function (id) {
-        await deleteDoc(doc(db, `users/${userId}/notes/${id}`));
-        await loadNotes();
-    };
+/* ---------------------------
+   5) 메모 렌더링 + 페이지네이션
+---------------------------- */
+function renderNotes() {
 
-    /* 수정 모달 */
-    window.openEditModal = function (id, encodedContent) {
-        const modal = document.createElement("div");
-        modal.className = "fixed top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center";
+    noteList.innerHTML = "";
 
-        modal.innerHTML = `
-            <div class="bg-white p-6 rounded-lg w-96 shadow-xl">
-                <h3 class="text-xl font-bold mb-4">메모 수정</h3>
+    const totalPages = Math.ceil(allNotes.length / NOTES_PER_PAGE);
+    if (currentPage > totalPages) currentPage = totalPages || 1;
 
-                <textarea id="edit-content" rows="6"
-                    class="w-full p-3 border rounded-lg">${decodeURIComponent(encodedContent)}</textarea>
+    const startIndex = (currentPage - 1) * NOTES_PER_PAGE;
+    const endIndex = startIndex + NOTES_PER_PAGE;
 
-                <div class="flex justify-end gap-3 mt-4">
-                    <button class="px-4 py-2 bg-gray-300 rounded-lg" id="cancelBtn">취소</button>
-                    <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg" id="saveBtn">저장</button>
-                </div>
+    const notesToShow = allNotes.slice(startIndex, endIndex);
+
+    notesToShow.forEach(note => {
+        const li = document.createElement("li");
+        li.className = "note-card";
+
+        li.innerHTML = `
+            <p class="text-xs text-gray-500 mb-2">
+                ${new Date(note.date).toLocaleString("ko-KR")}
+            </p>
+
+            <div class="note-content mb-3">
+                ${note.content}
+            </div>
+
+            <div class="flex gap-2">
+                <button onclick="updateNote('${note.id}')" 
+                        class="px-3 py-1 text-sm bg-indigo-100 text-indigo-700 rounded">
+                    수정
+                </button>
+
+                <button onclick="deleteNote('${note.id}')" 
+                        class="px-3 py-1 text-sm bg-red-100 text-red-600 rounded">
+                    삭제
+                </button>
             </div>
         `;
 
-        document.body.appendChild(modal);
+        noteList.appendChild(li);
+    });
 
-        document.getElementById("cancelBtn").onclick = () => modal.remove();
+    renderPagination(totalPages);
+}
 
-        document.getElementById("saveBtn").onclick = async () => {
-            const newText = document.getElementById("edit-content").value;
+function renderPagination(totalPages) {
+    pagination.innerHTML = "";
 
-            await updateDoc(doc(db, `users/${userId}/notes/${id}`), {
-                content: newText,
-                date: new Date().toISOString()
-            });
+    if (totalPages <= 1) return;
 
-            modal.remove();
-            await loadNotes();
-        };
-    };
+    // 이전 페이지
+    const prev = document.createElement("button");
+    prev.textContent = "이전";
+    prev.className = "px-3 py-1 bg-white border rounded";
+    prev.disabled = currentPage === 1;
+    prev.onclick = () => { currentPage--; renderNotes(); };
+    pagination.appendChild(prev);
+
+    // 페이지 번호
+    for (let i = 1; i <= totalPages; i++) {
+        const btn = document.createElement("button");
+        btn.textContent = i;
+        btn.className =
+            "px-3 py-1 rounded border " +
+            (i === currentPage ? "bg-indigo-600 text-white" : "bg-white");
+
+        btn.onclick = () => { currentPage = i; renderNotes(); };
+        pagination.appendChild(btn);
+    }
+
+    // 다음 페이지
+    const next = document.createElement("button");
+    next.textContent = "다음";
+    next.className = "px-3 py-1 bg-white border rounded";
+    next.disabled = currentPage === totalPages;
+    next.onclick = () => { currentPage++; renderNotes(); };
+    pagination.appendChild(next);
+}
 
 </script>
-
-</body>
-</html>
